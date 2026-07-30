@@ -3,65 +3,60 @@ Simple evaluation example.
 
 run: python eval_ppo.py --render
 
-Evaluate PPO1 policy (MLP input_dim x 64 x 64 x output_dim policy) against built-in AI
-
+Evaluate a PPO policy (MLP) against the built-in baseline AI.
+Requires a model trained by training_scripts/train_ppo.py (stable-baselines3).
 """
 
-import warnings
-# numpy warnings because of tensorflow
-warnings.filterwarnings("ignore", category=FutureWarning, module='tensorflow')
-warnings.filterwarnings("ignore", category=UserWarning, module='gym')
-
-import gym
+import os
+import gymnasium as gym
 import numpy as np
 import argparse
 
 import slimevolleygym
-from stable_baselines.common.policies import MlpPolicy
-from stable_baselines import PPO1
+from stable_baselines3 import PPO
+
 
 def rollout(env, policy, render_mode=False):
-  """ play one agent vs the other in modified gym-style loop. """
-  obs = env.reset()
-
-  done = False
+  """ play the trained agent against the built-in baseline policy """
+  obs, _ = env.reset()
+  terminated = False
+  truncated = False
   total_reward = 0
 
-  while not done:
-
+  while not (terminated or truncated):
     action, _states = policy.predict(obs, deterministic=True)
-    obs, reward, done, _ = env.step(action)
-
+    obs, reward, terminated, truncated, _ = env.step(action)
     total_reward += reward
-
     if render_mode:
       env.render()
 
   return total_reward
 
-if __name__=="__main__":
 
-  parser = argparse.ArgumentParser(description='Evaluate pre-trained PPO agent.')
-  parser.add_argument('--model-path', help='path to stable-baselines model.',
-                        type=str, default="zoo/ppo/best_model.zip")
+if __name__ == "__main__":
+
+  parser = argparse.ArgumentParser(description='Evaluate trained PPO agent.')
+  parser.add_argument('--model-path', help='path to stable-baselines3 model.',
+                      type=str, default="ppo/best_model.zip")
   parser.add_argument('--render', action='store_true', help='render to screen?', default=False)
 
   args = parser.parse_args()
   render_mode = args.render
 
-  env = gym.make("SlimeVolley-v0")
+  assert os.path.exists(args.model_path), \
+    args.model_path + " doesn't exist. Train one first: python training_scripts/train_ppo.py"
 
-  # the yellow agent:
+  env = gym.make("SlimeVolley-v0", render_mode="human" if render_mode else None)
+
   print("Loading", args.model_path)
-  policy = PPO1.load(args.model_path, env=env) # 96-core PPO1 policy
+  policy = PPO.load(args.model_path, env=env)
 
   history = []
   for i in range(1000):
-    env.seed(seed=i)
+    env.reset(seed=i)
     cumulative_score = rollout(env, policy, render_mode)
     print("cumulative score #", i, ":", cumulative_score)
     history.append(cumulative_score)
 
   print("history dump:", history)
-  # this is what I got: [1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 2, 1, 1, 1, 1, 4, 0, 0, 0, 2, 2, 0, 1, 2, 2, 2, 1, 2, 1, 0, 2, 0, 1, 1, 1, 0, 0, 1, 0, 1, 2, 0, 0, 1, 1, 4, 1, 0, 2, 2, 3, 2, 4, 4, 1, 1, 2, 0, 0, 0, 4, 1, 1, 2, 0, 1, 1, 1, 2, 1, 1, 3, 2, 0, 1, 1, 1, 2, 2, 1, 1, 0, 0, 0, 1, 1, 1, 2, 5, 3, 3, 0, 0, 1, 0, 0, 2, 2, 1, 2, 1, 1, 0, 1, 0, 1, 1, 2, 2, 1, 3, 4, 0, 0, 0, 3, 0, 1, 5, 2, 4, 0, 1, 1, 1, 3, 0, 1, 2, 1, 1, 2, 1, 1, 2, 0, 1, 1, 0, 1, 0, 1, 2, 0, 2, 0, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 0, 0, 0, 3, 0, 1, 3, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 2, 0, 1, 2, 1, 0, 0, 1, 2, 0, 2, 1, 0, 1, 2, 2, 0, 2, 1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 2, 0, 1, 1, 0, 2, 1, 0, 1, 0, 1, 0, 1, 3, 2, 2, 1, 2, 0, 2, 2, 0, 1, 0, 1, 0, 0, 2, 1, 2, 1, 0, 2, 1, 0, 1, 0, 2, 1, 1, 1, 2, 2, 2, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 2, 1, 1, 1, 0, 0, 1, 0, 1, 1, 0, 2, 0, 2, 0, 0, 1, 1, 0, 1, 2, 1, 0, 2, 3, 3, 4, 0, 0, 1, 0, 1, 1, 2, 0, 1, 0, 1, 0, 2, 1, 0, 3, 0, 0, 1, 1, 1, 2, 2, 0, 0, 2, 0, 0, 1, 2, 4, 0, 2, 0, 1, 1, 1, 0, 1, 2, 1, 0, 0, 4, 1, 0, 0, 0, 0, 2, 1, 1, 1, 3, 1, 1, 1, 2, 1, 1, 1, 2, 1, 0, 1, 1, 2, 0, 0, 0, 1, 4, 2, 3, 0, 3, 1, 0, 0, 1, 2, 2, 1, 0, 0, 1, 2, 0, 2, 1, 0, 1, 0, 0, 0, 1, 0, 2, 1, 2, 0, 1, 1, 2, 1, 0, 1, 0, 1, 1, 2, 0, 2, 0, 0, 1, 1, 0, 0, 2, 0, 2, 0, 1, 2, 2, 3, 1, 1, 0, 0, 1, 1, 4, 2, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 2, 3, 0, 0, 2, 2, 0, 3, 1, 0, 2, 0, 1, 0, 0, 2, 1, 2, 3, 1, 0, 1, 0, 1, 2, 1, 0, 2, 0, 0, 1, 0, 0, 1, 1, 1, 0, 2, 1, 0, 2, 2, 0, 1, 0, 1, 0, 5, 2, 2, 0, 1, 2, 0, 2, 0, 0, 0, 1, 0, 0, 1, 0, 2, 2, 1, 0, 1, 1, 2, 0, 0, 2, 0, 0, 3, 2, 2, -1, 3, 1, 1, 2, 0, 0, 2, 1, 1, 0, 1, 1, 3, 0, 2, 1, 1, 0, 3, 2, 1, 0, 2, 1, 2, 0, 1, 0, 2, 0, 2, 0, 3, 0, 0, 1, 0, 0, 1, 0, 0, 0, 2, 1, 2, 0, 3, 0, 2, 0, 1, 2, 1, 0, 0, 1, 2, 1, 0, 0, 4, 3, 0, 2, 1, 0, 0, 0, 2, 2, 1, 1, 0, 0, 2, 1, 0, 2, 2, 1, 0, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1, 2, 2, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 1, 1, 2, 0, 0, 0, 2, 2, 2, 0, 0, 4, 3, 0, 0, 1, 0, 1, 1, 3, 3, 1, 0, 1, 1, 0, 0, 3, 3, 0, 2, 3, 1, 2, 1, 3, 2, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 2, 0, 1, 1, 2, 1, 3, 1, 2, 0, -1, 0, 1, 0, 1, 4, 4, 0, 0, 0, 1, 0, 1, 0, 1, 3, 1, 0, 1, 1, 1, 0, 1, 1, 0, 2, 0, 2, 0, 0, 2, 1, 1, 1, 0, 1, 3, 1, 0, 0, 0, 1, 1, 0, 1, 2, 0, 2, 2, 0, 1, 0, 2, 3, 1, 1, 1, 1, 0, 2, 2, 1, 2, 0, 0, 2, 0, 1, 3, 0, 1, 0, 1, 0, 1, 0, 0, 2, 1, 2, 0, 2, 1, 1, 3, 1, 2, 2, 0, 1, 0, 2, 0, 1, 2, 0, 1, 2, 1, 0, 0, 0, 2, 0, 0, 2, 0, 0, 0, 0, 0, 1, 0, 0, 1, 2, 1, 2, 0, 0, 0, 2, 1, 1, 3, 1, 2, 2, 2, 2, 0, 1, 1, 1, 2, 0, 1, 4, 0, 0, 0, 1, 4, 0, 1, 4, 1, 2, 1, 1, 3, 3, 3, 4, 1, 0, 1, 0, 0, 3, 1, 4, 1, 3, 1, 1, 1, 0, 2, 4, 1, 0, 3, 2, 1, 0, 0, 3, 1, 2, 0, 0, 0, 4, 0, 1, 0, 1, 1, 0, 0, 0, 0, 2, 1, 1, 0, 2, 3, 0, 1, 0, 1, 1, 2, 0, 1, 1, 1, 2, 1, 2, 1, 1, 1, 1, 2, 0, 0, 1, 0, 0, 1, 2, 1, 3, 2, 0, 2, 0, 0, 0, 0, 1, 0, 2, 0, 1, 0, 1, 0, 1, 0, 0, 2, 1, 1, 2, 0, 1, 1, 1, 1, 2, 1, 0, 1, 0, 2, 3, 3, 0, -1, 2, 0, 1, 1, 3, 0, 1, 0, 0, 3, 0, 2, 0, 0, 1, 0, 2, 2, -1, 1, 0, 0, 1, 0, 1, 1, 0, 2, 1, 3, 1, 0, 2, 2, 1, 1, 1, 1, 1, 3, 1, 1, 2, 0, 2, 2, 1, 0, 0, 2, 0, 1, 2, 3, 2, 3, 0, 3, 2, 3, 2]
   print("average score", np.mean(history), "standard_deviation", np.std(history))

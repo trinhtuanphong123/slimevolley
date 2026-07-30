@@ -1,116 +1,18 @@
 """
-Pixel observation environment (atari compatible example, w/ 84x84 resized 4-frame stack.
+Pixel observation environment (Atari-compatible example, with 84x84 resized
+4-frame stack). Human-playable demo using stable-baselines3's Atari wrappers.
+
+The agent (right side) defaults to NOOP; take over with the arrow keys.
 """
 
-import gym
-from gym import spaces
 import numpy as np
+import gymnasium as gym
 import slimevolleygym
+from slimevolleygym import render_atari, FrameStack
+from slimevolleygym._rendering import SimpleImageViewer
+from stable_baselines3.common.atari_wrappers import AtariWrapper
 from pyglet.window import key
 from time import sleep
-import cv2
-from gym.envs.classic_control import rendering as rendering
-from slimevolleygym import FrameStack, render_atari
-
-class NoopResetEnv(gym.Wrapper):
-  def __init__(self, env, noop_max=30):
-    """
-    (from stable-baselines)
-    Sample initial states by taking random number of no-ops on reset.
-    No-op is assumed to be action 0.
-
-    :param env: (Gym Environment) the environment to wrap
-    :param noop_max: (int) the maximum value of no-ops to run
-    """
-    gym.Wrapper.__init__(self, env)
-    self.noop_max = noop_max
-    self.override_num_noops = None
-    self.noop_action = 0
-    assert env.unwrapped.get_action_meanings()[0] == 'NOOP'
-
-  def reset(self, **kwargs):
-    self.env.reset(**kwargs)
-    if self.override_num_noops is not None:
-      noops = self.override_num_noops
-    else:
-      noops = self.unwrapped.np_random.randint(1, self.noop_max + 1)
-    assert noops > 0
-    obs = None
-    for _ in range(noops):
-      obs, _, done, _ = self.env.step(self.noop_action)
-      if done:
-        obs = self.env.reset(**kwargs)
-    return obs
-
-  def step(self, action):
-      return self.env.step(action)
-
-class MaxAndSkipEnv(gym.Wrapper):
-  def __init__(self, env, skip=4):
-    """
-    (from stable baselines)
-    Return only every `skip`-th frame (frameskipping)
-
-    :param env: (Gym Environment) the environment
-    :param skip: (int) number of `skip`-th frame
-    """
-    gym.Wrapper.__init__(self, env)
-    # most recent raw observations (for max pooling across time steps)
-    self._obs_buffer = np.zeros((2,)+env.observation_space.shape, dtype=env.observation_space.dtype)
-    self._skip = skip
-
-  def step(self, action):
-    """
-    Step the environment with the given action
-    Repeat action, sum reward, and max over last observations.
-
-    :param action: ([int] or [float]) the action
-    :return: ([int] or [float], [float], [bool], dict) observation, reward, done, information
-    """
-    total_reward = 0.0
-    done = None
-    for i in range(self._skip):
-      obs, reward, done, info = self.env.step(action)
-      if i == self._skip - 2:
-        self._obs_buffer[0] = obs
-      if i == self._skip - 1:
-        self._obs_buffer[1] = obs
-      total_reward += reward
-      if done:
-        break
-    # Note that the observation on the done=True frame
-    # doesn't matter
-    max_frame = self._obs_buffer.max(axis=0)
-
-    return max_frame, total_reward, done, info
-
-  def reset(self, **kwargs):
-      return self.env.reset(**kwargs)
-
-class WarpFrame(gym.ObservationWrapper):
-  def __init__(self, env):
-    """
-    (from stable-baselines)
-    Warp frames to 84x84 as done in the Nature paper and later work.
-
-    :param env: (Gym Environment) the environment
-    """
-    gym.ObservationWrapper.__init__(self, env)
-    self.width = 84
-    self.height = 84
-    self.observation_space = spaces.Box(low=0, high=255, shape=(self.height, self.width, 1),
-                                        dtype=env.observation_space.dtype)
-
-  def observation(self, frame):
-    """
-    returns the current observation from a frame
-
-    :param frame: ([int] or [float]) environment frame
-    :return: ([int] or [float]) the observation
-    """
-    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-    frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
-    return frame[:, :, None]
 
 
 def toAtariAction(action):
@@ -140,10 +42,11 @@ def toAtariAction(action):
     return 3
   return 0
 
-# simulate typical Atari Env:
-if __name__=="__main__":
 
-  manualAction = [0, 0, 0] # forward, backward, jump
+# simulate typical Atari Env:
+if __name__ == "__main__":
+
+  manualAction = [0, 0, 0]  # forward, backward, jump
   manualMode = False
 
   # taken from https://github.com/openai/gym/blob/master/gym/envs/box2d/car_racing.py
@@ -160,45 +63,36 @@ if __name__=="__main__":
     if k == key.RIGHT: manualAction[1] = 0
     if k == key.UP:    manualAction[2] = 0
 
-  viewer = rendering.SimpleImageViewer(maxwidth=2160)
+  viewer = SimpleImageViewer(maxwidth=2160)
 
   env = gym.make("SlimeVolleyNoFrameskip-v0")
-  # typical Atari processing:
-  env = NoopResetEnv(env, noop_max=30)
-  env = MaxAndSkipEnv(env, skip=4)
-  env = WarpFrame(env)
+  # standard Atari pre-processing: random no-ops, frame skip 4, 84x84 grayscale warp, then 4-frame stack
+  env = AtariWrapper(env, clip_reward=False)
   env = FrameStack(env, 4)
-  env.seed(689)
-
-  obs = env.reset()
+  obs, _ = env.reset(seed=689)
 
   for t in range(10000):
 
-    if manualMode: # override with keyboard
-      #action = toAtariAction(manualAction) # not needed anymore
-      action = manualAction # now just work w/ multibinary if it is not scalar
+    if manualMode:  # override with keyboard
+      action = toAtariAction(manualAction)
     else:
-      action = 0 #env.action_space.sample() # your agent here (this takes random actions)
+      action = 0  # NOOP (your agent here)
 
-    obs, reward, done, info = env.step(action)
-
-    if reward > 0 or reward < 0:
-      print("reward", reward)
-      manualMode = False
+    obs, reward, terminated, truncated, info = env.step(action)
 
     if reward > 0 or reward < 0:
       print(t, reward)
+      manualMode = False
 
-    render_img = render_atari(obs)
-    viewer.imshow(render_img)
+    viewer.imshow(render_atari(obs))
     sleep(0.08)
 
     if t == 0:
       viewer.window.on_key_press = key_press
       viewer.window.on_key_release = key_release
 
-    if done:
-      obs = env.reset()
+    if terminated or truncated:
+      obs, _ = env.reset()
 
   viewer.close()
   env.close()

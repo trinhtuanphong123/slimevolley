@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main, modernize/gymnasium-sb3]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package (core deps)
+        run: pip install -e .
+
+      - name: Install CPU PyTorch + stable-baselines3
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install stable-baselines3
+
+      - name: Byte-compile all sources
+        run: python -m py_compile slimevolleygym/*.py *.py training_scripts/*.py
+
+      - name: Headless smoke test
+        run: python test_smoke.py
+
+      - name: SB3 env compatibility check
+        run: |
+          python -c "import gymnasium as gym, slimevolleygym; from stable_baselines3.common.env_checker import check_env; check_env(gym.make('SlimeVolley-v0').unwrapped, skip_render_check=True); check_env(gym.make('SlimeVolleyPixel-v0').unwrapped, skip_render_check=True); print('check_env PASS')"

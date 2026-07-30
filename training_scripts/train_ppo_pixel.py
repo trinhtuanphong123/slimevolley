@@ -1,91 +1,73 @@
 #!/usr/bin/env python3
 
-# Trains a convnet PPO agent to play SlimeVolley from pixels (SlimeVolleyNoFrameskip-v0)
-# requires stable_baselines (I used 2.10)
-
-# run with
-# mpirun -np 96 python train_ppo_pixel.py (replace 96 with number of CPU cores you have.)
+# Trains a convnet PPO agent to play SlimeVolley from pixels
+# (SlimeVolleySurvivalNoFrameskip-v0), using the Atari preprocessing wrappers
+# bundled with stable-baselines3.
+#
+# run with:  python train_ppo_pixel.py   (set NUM_ENVS to your CPU core count)
+#
+# Requires stable-baselines3: pip install slimevolleygym[training]
 
 import os
-import gym
+import gymnasium as gym
 import slimevolleygym
 
-from mpi4py import MPI
-from stable_baselines.common import set_global_seeds
-from stable_baselines.common.atari_wrappers import ClipRewardEnv, NoopResetEnv, MaxAndSkipEnv, WarpFrame
-from stable_baselines.common.policies import CnnPolicy
-from stable_baselines import bench, logger, PPO1
-from stable_baselines.common.callbacks import CheckpointCallback, EvalCallback
+from stable_baselines3 import PPO
+from stable_baselines3.common.atari_wrappers import AtariWrapper
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor
+from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.logger import configure
+from slimevolleygym import FrameStack  # plain-numpy frame stack (no LazyFrames)
 
-from slimevolleygym import FrameStack # doesn't use Lazy Frames, easier to debug
-
-
-NUM_TIMESTEPS = 2000000000
+NUM_TIMESTEPS = int(2e9)
+NUM_ENVS = 96           # number of parallel workers (CPU cores)
 SEED = 101
-EVAL_FREQ = 100000 # note, will evaluate ever 96 * 100000 steps (where 96 is number of workers)
-EVAL_EPISODES = 100 # make sure to rerun on 1000 episodes afterwards to measure that performance, don't use only 100.
-LOGDIR = "ppo1_cnn" # moved to zoo afterwards.
+EVAL_EPISODES = 100
+LOGDIR = "ppo_cnn"     # moved to zoo afterwards.
 
 
-def make_env(seed):
-  # almost the same a typical Atari processing for CNN agent.
-  # (I removed reward clipping, but used survival reward bonus)
-  env = gym.make("SlimeVolleySurvivalNoFrameskip-v0")
-  env = NoopResetEnv(env, noop_max=30)
-  env = MaxAndSkipEnv(env, skip=4)
-  env = WarpFrame(env)
-  #env = ClipRewardEnv(env)
-  env = FrameStack(env, 4)
-  env.seed(seed)
-  return env
-
-
-def make_eval_env(seed):
-  env = gym.make("SlimeVolleyNoFrameskip-v0")
-  env = NoopResetEnv(env, noop_max=30)
-  env = MaxAndSkipEnv(env, skip=4)
-  env = WarpFrame(env)
-  #env = ClipRewardEnv(env)
-  env = FrameStack(env, 4)
-  env.seed(seed)
-  return env
+def make_env(env_id, seed):
+    # AtariWrapper performs the usual Atari pre-processing (random no-ops,
+    # frame skip 4, 84x84 grayscale warp, 4-frame stack). clip_reward=False keeps
+    # the small survival bonus (+0.01), matching the original training setup.
+    def _init():
+        env = gym.make(env_id)
+        env = AtariWrapper(env, clip_reward=False)
+        env = FrameStack(env, 4)
+        env.reset(seed=seed)
+        return env
+    return _init
 
 
 def train():
-  """
-  Train PPO1 model for cartpole swingup, for testing purposes.
-  """
-  rank = MPI.COMM_WORLD.Get_rank()
+    os.makedirs(LOGDIR, exist_ok=True)
+    logger = configure(LOGDIR, ["stdout", "csv"])
 
-  if rank == 0:
-    logger.configure(folder=LOGDIR)
+    env = VecMonitor(SubprocVecEnv(
+        [make_env("SlimeVolleySurvivalNoFrameskip-v0", SEED + 10000 * i)
+         for i in range(NUM_ENVS)]))
+    eval_env = VecMonitor(SubprocVecEnv(
+        [make_env("SlimeVolleyNoFrameskip-v0", SEED + 999000)]))
 
-  else:
-    logger.configure(format_strs=[])
-  workerseed = SEED + 10000 * MPI.COMM_WORLD.Get_rank()
-  set_global_seeds(workerseed)
-  env = make_env(workerseed)
-  eval_env = make_eval_env(workerseed)
+    # Atari-tuned hyperparameters (from the stable-baselines3 Atari example).
+    model = PPO("CnnPolicy", env,
+                n_steps=256, batch_size=64, n_epochs=4,
+                learning_rate=2.5e-4, gamma=0.99, gae_lambda=0.95,
+                clip_range=0.1, ent_coef=0.01, verbose=2, seed=SEED)
 
-  env = bench.Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
-  env.seed(workerseed)
+    eval_freq = max(1, 100000 // NUM_ENVS)
+    eval_callback = EvalCallback(eval_env, best_model_save_path=LOGDIR,
+                                 log_path=LOGDIR, eval_freq=eval_freq,
+                                 n_eval_episodes=EVAL_EPISODES,
+                                 deterministic=True)
 
-  # hyperparameters from stable baseline's ppo1 atary example:
-  model = PPO1(CnnPolicy, env, timesteps_per_actorbatch=256, clip_param=0.2, entcoeff=0.01, optim_epochs=4,
-               optim_stepsize=1e-3, optim_batchsize=64, gamma=0.99, lam=0.95, schedule='linear', verbose=2)
+    model.set_logger(logger)
+    model.learn(total_timesteps=NUM_TIMESTEPS, callback=eval_callback)
 
-  eval_callback = EvalCallback(eval_env, best_model_save_path=LOGDIR,
-                             log_path=LOGDIR, eval_freq=EVAL_FREQ,
-                             deterministic=True, render=False,
-                             n_eval_episodes=EVAL_EPISODES)
-
-  model.learn(total_timesteps=NUM_TIMESTEPS, callback=eval_callback)
-
-  env.close()
-  del env
-  if rank == 0:
-    model.save(os.path.join(LOGDIR, "final_model")) # probably never get to this point.
+    env.close()
+    del env
+    model.save(os.path.join(LOGDIR, "final_model"))
 
 
 if __name__ == '__main__':
-  train()
+    train()

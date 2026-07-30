@@ -1,5 +1,7 @@
 # Slime Volleyball Gym Environment
 
+![CI](https://github.com/trinhtuanphong123/slimevolley/actions/workflows/ci.yml/badge.svg)
+
 <p align="left">
   <img width="100%" src="https://otoro.net/img/slimegym/pixel.gif"></img>
 </p>
@@ -22,11 +24,15 @@ This environment is based on [Neural Slime Volleyball](https://otoro.net/slimevo
 
 ### Note: Regarding Libraries
 
-- The pre-trained PPO models were trained using [stable-baselines](https://github.com/hill-a/stable-baselines) v2.10, *not* [stable-baselines3](https://github.com/DLR-RM/stable-baselines3).
+- This fork has been modernized to use [Gymnasium](https://gymnasium.farama.org/) (the maintained successor to OpenAI Gym). The training/evaluation scripts use [stable-baselines3](https://github.com/DLR-RM/stable-baselines3) (the PyTorch rewrite) instead of the old TensorFlow `stable-baselines`. Parallel training uses SB3's `VecEnv` — `mpi4py` is no longer required.
 
-- The examples were developed based on Gym version 0.19.0 or earlier. I tested 0.20.0 briefly and it seems to work, but later versions of Gym have API-breaking changes.
+- The Gymnasium API differs from old Gym: `step()` returns the 5-tuple `(obs, reward, terminated, truncated, info)`, `reset()` returns `(obs, info)`, and rendering is selected via `render_mode` at construction (e.g. `gym.make("SlimeVolley-v0", render_mode="human")`). `env.seed()` is gone — pass the seed to `reset(seed=...)`.
 
-- I used pyglet library 0.15.7 or earlier while developing this, but have not tested whether the package works for the latest versions of pyglet.
+- Rendering is implemented with a small self-contained pyglet viewer in `slimevolleygym/_rendering.py`, since the old `gym.envs.classic_control.rendering` module was removed in modern Gym/Gymnasium.
+
+- The pre-trained CMA-ES and GA agents in `zoo/` are stored as plain JSON weight dumps and still load fine. The legacy `stable-baselines` (TF) PPO `.zip` models were not portable to `stable-baselines3` (PyTorch) and have been removed — retrain them with the updated SB3 scripts if you need PPO agents.
+
+- Gymnasium and stable-baselines3 release independently and SB3 lags behind Gymnasium's newest version. On import, `slimevolleygym` runs a best-effort check (`slimevolleygym/_compat.py`) that warns immediately if the installed Gymnasium is outside SB3's declared supported range. To verify an environment is SB3-compatible, you can also run SB3's own checker: `from stable_baselines3.common.env_checker import check_env; check_env(your_env)`.
 
 ### Notable features
 
@@ -58,6 +64,12 @@ Install from the repo, if you want basic usage demos, training scripts, pre-trai
 git clone https://github.com/hardmaru/slimevolleygym.git
 cd slimevolleygym
 pip install -e .
+```
+
+To also run the training / evaluation scripts (stable-baselines3 + PyTorch):
+
+```
+pip install -e .[training]
 ```
 
 ## Basic Usage
@@ -107,20 +119,20 @@ Both state and pixel observations are presented assuming the agent is playing on
 It is straight forward to modify the gym loop to enable multi-agent or self-play. Here is a basic gym loop:
 
 ```python
-import gym
+import gymnasium as gym
 import slimevolleygym
 
-env = gym.make("SlimeVolley-v0")
+env = gym.make("SlimeVolley-v0", render_mode="human")
 
-obs = env.reset()
-done = False
+obs, info = env.reset(seed=0)
+terminated = False
+truncated = False
 total_reward = 0
 
-while not done:
+while not (terminated or truncated):
   action = my_policy(obs)
-  obs, reward, done, info = env.step(action)
+  obs, reward, terminated, truncated, info = env.step(action)
   total_reward += reward
-  env.render()
 
 print("score:", total_reward)
 ```
@@ -140,22 +152,22 @@ info = {
 This modification allows you to evaluate `policy1` against `policy2`
 
 ```python
-obs1 = env.reset()
+obs1, info = env.reset(seed=0)
 obs2 = obs1 # both sides always see the same initial observation.
 
-done = False
+terminated = False
+truncated = False
 total_reward = 0
 
-while not done:
+while not (terminated or truncated):
 
   action1 = policy1(obs1)
   action2 = policy2(obs2)
 
-  obs1, reward, done, info = env.step(action1, action2) # extra argument
+  obs1, reward, terminated, truncated, info = env.step(action1, action2) # extra argument
   obs2 = info['otherObs']
 
   total_reward += reward
-  env.render()
 
 print("policy1's score:", total_reward)
 print("policy2's score:", -total_reward)

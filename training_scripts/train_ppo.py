@@ -1,37 +1,54 @@
 #!/usr/bin/env python3
 
-# Train single CPU PPO1 on slimevolley.
-# Should solve it (beat existing AI on average over 1000 trials) in 3 hours on single CPU, within 3M steps.
+# Train single CPU PPO on slimevolley (state observations).
+# Should solve it (beat the built-in AI on average over 1000 trials) in a few
+# hours on a single CPU, within ~3M steps.
+#
+# Requires stable-baselines3: pip install slimevolleygym[training]
 
 import os
-import gym
+import gymnasium as gym
 import slimevolleygym
-from slimevolleygym import SurvivalRewardEnv
 
-from stable_baselines.ppo1 import PPO1
-from stable_baselines.common.policies import MlpPolicy
-from stable_baselines import logger
-from stable_baselines.common.callbacks import EvalCallback
+from stable_baselines3 import PPO
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.logger import configure
 
 NUM_TIMESTEPS = int(2e7)
 SEED = 721
 EVAL_FREQ = 250000
 EVAL_EPISODES = 1000
-LOGDIR = "ppo1" # moved to zoo afterwards.
+LOGDIR = "ppo"  # moved to zoo afterwards.
 
-logger.configure(folder=LOGDIR)
+os.makedirs(LOGDIR, exist_ok=True)
+logger = configure(LOGDIR, ["stdout", "csv"])
 
-env = gym.make("SlimeVolley-v0")
-env.seed(SEED)
+env = Monitor(gym.make("SlimeVolley-v0"))
+eval_env = Monitor(gym.make("SlimeVolley-v0"))
+env.reset(seed=SEED)
+eval_env.reset(seed=SEED)
 
-# take mujoco hyperparams (but doubled timesteps_per_actorbatch to cover more steps.)
-model = PPO1(MlpPolicy, env, timesteps_per_actorbatch=4096, clip_param=0.2, entcoeff=0.0, optim_epochs=10,
-                 optim_stepsize=3e-4, optim_batchsize=64, gamma=0.99, lam=0.95, schedule='linear', verbose=2)
+# PPO1 hyperparameters mapped to stable-baselines3 PPO:
+#   timesteps_per_actorbatch -> n_steps
+#   optim_epochs             -> n_epochs
+#   optim_stepsize           -> learning_rate
+#   optim_batchsize          -> batch_size
+#   lam                      -> gae_lambda
+#   entcoeff                 -> ent_coef
+#   clip_param               -> clip_range
+model = PPO("MlpPolicy", env,
+            n_steps=4096, batch_size=64, n_epochs=10,
+            learning_rate=3e-4, gamma=0.99, gae_lambda=0.95,
+            clip_range=0.2, ent_coef=0.0, verbose=2, seed=SEED)
 
-eval_callback = EvalCallback(env, best_model_save_path=LOGDIR, log_path=LOGDIR, eval_freq=EVAL_FREQ, n_eval_episodes=EVAL_EPISODES)
+eval_callback = EvalCallback(eval_env, best_model_save_path=LOGDIR,
+                             log_path=LOGDIR, eval_freq=EVAL_FREQ,
+                             n_eval_episodes=EVAL_EPISODES, deterministic=True)
 
+model.set_logger(logger)
 model.learn(total_timesteps=NUM_TIMESTEPS, callback=eval_callback)
 
-model.save(os.path.join(LOGDIR, "final_model")) # probably never get to this point.
+model.save(os.path.join(LOGDIR, "final_model"))  # probably never get to this point.
 
 env.close()
