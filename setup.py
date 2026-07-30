@@ -19,6 +19,7 @@ setup(
         'training': [
             'stable-baselines3>=2.3',
             'torch>=2.0',
+            'tensorboard>=2.9',
         ],
     },
 )

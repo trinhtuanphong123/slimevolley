@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
   parser = argparse.ArgumentParser(description='Evaluate trained PPO agent.')
   parser.add_argument('--model-path', help='path to stable-baselines3 model.',
-                      type=str, default="ppo/best_model.zip")
+                      type=str, default="zoo/ppo/best_model.zip")
   parser.add_argument('--render', action='store_true', help='render to screen?', default=False)
 
   args = parser.parse_args()

@@ -97,7 +97,7 @@ if __name__ == "__main__":
 
   PATH = {
     "baseline": None,
-    "ppo": "ppo/best_model.zip",
+    "ppo": "zoo/ppo/best_model.zip",
     "cma": "zoo/cmaes/slimevolley.cma.64.96.best.json",
     "ga": "zoo/ga_sp/ga.json",
     "random": None,

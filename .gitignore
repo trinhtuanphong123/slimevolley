@@ -30,3 +30,11 @@ ppo1_cnn/
 ga_selfplay/
 logs/
 tensorboard/
+
+# Generated PPO training outputs (models/logs written by the training scripts;
+# the curated, library-agnostic agents in zoo/ are JSON and stay tracked).
+zoo/ppo/*.zip
+zoo/ppo/*.npz
+zoo/ppo_cnn/
+zoo/ppo_sp/
+ppo_tensorboard/
