@@ -1,6 +1,8 @@
 # A Tutorial on Training Self-Play Agents
 
-Here, we provide training examples of 3 self-play methods: genetic algorithm (GA), PPO, and cooperative CMA-ES. We show that self-play can produce agents that can defeat the baseline policy without the need to train against it. Before going into self-play, we will first go through examples that use standard RL methods such as PPO (using [stable-baselines v2.10](https://github.com/hill-a/stable-baselines) library) and evolution strategies (CMA-ES) to train an agent in the standard single-agent environment, where the agent learns by playing against the “expert” baseline policy from [2015](https://otoro.net/slimevolley/).
+Here, we provide training examples of 3 self-play methods: genetic algorithm (GA), PPO, and cooperative CMA-ES. We show that self-play can produce agents that can defeat the baseline policy without the need to train against it. Before going into self-play, we will first go through examples that use standard RL methods such as PPO (using [stable-baselines3](https://github.com/DLR-RM/stable-baselines3)) and evolution strategies (CMA-ES) to train an agent in the standard single-agent environment, where the agent learns by playing against the “expert” baseline policy from [2015](https://otoro.net/slimevolley/).
+
+> **Note (modernized fork):** the training scripts now use stable-baselines3 (`PPO`) on Gymnasium rather than the old TensorFlow `stable-baselines` (`PPO1`). The `PPO1` hyperparameters map to SB3 `PPO` as follows: `timesteps_per_actorbatch`→`n_steps`, `optim_epochs`→`n_epochs`, `optim_stepsize`→`learning_rate`, `optim_batchsize`→`batch_size`, `lam`→`gae_lambda`, `entcoeff`→`ent_coef`, `clip_param`→`clip_range`. Multi-worker training (formerly MPI) now uses SB3's `SubprocVecEnv`.
 
 ## SlimeVolley-v0: State Observation Environment
 

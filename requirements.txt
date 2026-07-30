@@ -1,2 +1,12 @@
-pyglet==1.5.11
-gym==0.19.0
+# Core environment dependencies (enough to use the SlimeVolley environments)
+gymnasium>=1.0
+numpy>=1.24
+opencv-python>=4.0
+pyglet>=1.5
+
+# The training / evaluation scripts additionally need:
+#   stable-baselines3>=2.3
+#   torch>=2.0
+# Install them with:  pip install slimevolleygym[training]
+# (Parallel training now uses stable-baselines3's VecEnv; mpi4py is no longer
+#  required, and the pixel/CNN path uses SB3's bundled Atari wrappers.)

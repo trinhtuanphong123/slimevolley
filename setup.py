@@ -2,14 +2,23 @@ from setuptools import setup
 
 setup(
     name='slimevolleygym',
-    version='0.1.0',
-    keywords='games, environment, agent, rl, ai, gym',
+    version='0.2.0',
+    keywords='games, environment, agent, rl, ai, gymnasium',
     url='https://github.com/hardmaru/slimevolleygym',
-    description='Slime Volleyball Gym Environment',
+    description='Slime Volleyball Gymnasium Environment',
     packages=['slimevolleygym'],
+    python_requires='>=3.9',
     install_requires=[
-        'gym>=0.9.4',
-        'numpy>=1.13.0',
-        'opencv-python>=3.4.2.0'
-    ]
+        'gymnasium>=1.0',
+        'numpy>=1.24',
+        'opencv-python>=4.0',
+        'pyglet>=1.5',
+    ],
+    extras_require={
+        # install with: pip install -e .[training]
+        'training': [
+            'stable-baselines3>=2.3',
+            'torch>=2.0',
+        ],
+    },
 )
