@@ -30,6 +30,8 @@ This environment is based on [Neural Slime Volleyball](https://otoro.net/slimevo
 
 - The pre-trained CMA-ES and GA agents in `zoo/` are stored as plain JSON weight dumps and still load fine. The legacy `stable-baselines` (TF) PPO `.zip` models were not portable to `stable-baselines3` (PyTorch) and have been removed — retrain them with the updated SB3 scripts if you need PPO agents.
 
+- Gymnasium and stable-baselines3 release independently and SB3 lags behind Gymnasium's newest version. On import, `slimevolleygym` runs a best-effort check (`slimevolleygym/_compat.py`) that warns immediately if the installed Gymnasium is outside SB3's declared supported range. To verify an environment is SB3-compatible, you can also run SB3's own checker: `from stable_baselines3.common.env_checker import check_env; check_env(your_env)`.
+
 ### Notable features
 
 - Only dependencies are gym and numpy. No other libraries needed to run the env, making it less likely to break.
