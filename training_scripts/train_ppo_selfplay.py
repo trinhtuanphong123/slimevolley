@@ -1,64 +1,71 @@
 #!/usr/bin/env python3
 
-# Simple self-play PPO trainer
+# Simple self-play PPO trainer (stable-baselines3).
+#
+# The opponent inside the environment is replaced by the latest "champion"
+# (a previously checkpointed version of the agent). A new champion is promoted
+# only when the current agent beats the previous one by BEST_THRESHOLD.
+#
+# Requires stable-baselines3: pip install slimevolleygym[training]
 
 import os
-import gym
+import gymnasium as gym
 import slimevolleygym
-import numpy as np
 
-from stable_baselines.ppo1 import PPO1
-from stable_baselines.common.policies import MlpPolicy
-from stable_baselines import logger
-from stable_baselines.common.callbacks import EvalCallback
-
-from shutil import copyfile # keep track of generations
+from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.logger import configure
+from shutil import copyfile
 
 # Settings
 SEED = 17
 NUM_TIMESTEPS = int(1e9)
 EVAL_FREQ = int(1e5)
 EVAL_EPISODES = int(1e2)
-BEST_THRESHOLD = 0.5 # must achieve a mean score above this to replace prev best self
+BEST_THRESHOLD = 0.5  # must achieve a mean score above this to replace prev best self
 
-RENDER_MODE = False # set this to false if you plan on running for full 1000 trials.
+LOGDIR = "ppo_selfplay"
 
-LOGDIR = "ppo1_selfplay"
 
 class SlimeVolleySelfPlayEnv(slimevolleygym.SlimeVolleyEnv):
-  # wrapper over the normal single player env, but loads the best self play model
+  # the normal single-player env, but the opponent is the best self-play model
   def __init__(self):
     super(SlimeVolleySelfPlayEnv, self).__init__()
-    self.policy = self
+    self.policy = self          # the opponent policy is 'self'
     self.best_model = None
     self.best_model_filename = None
-  def predict(self, obs): # the policy
+
+  def predict(self, obs):  # the opponent's policy
     if self.best_model is None:
-      return self.action_space.sample() # return a random action
+      return self.action_space.sample()  # random action until a champion exists
     else:
-      action, _ = self.best_model.predict(obs)
+      action, _ = self.best_model.predict(obs, deterministic=True)
       return action
-  def reset(self):
-    # load model if it's there
-    modellist = [f for f in os.listdir(LOGDIR) if f.startswith("history")]
+
+  def reset(self, *, seed=None, options=None):
+    # load the latest champion model if one exists
+    modellist = ([f for f in os.listdir(LOGDIR) if f.startswith("history")]
+                 if os.path.exists(LOGDIR) else [])
     modellist.sort()
     if len(modellist) > 0:
-      filename = os.path.join(LOGDIR, modellist[-1]) # the latest best model
+      filename = os.path.join(LOGDIR, modellist[-1])  # the latest best model
       if filename != self.best_model_filename:
         print("loading model: ", filename)
         self.best_model_filename = filename
         if self.best_model is not None:
           del self.best_model
-        self.best_model = PPO1.load(filename, env=self)
-    return super(SlimeVolleySelfPlayEnv, self).reset()
+        self.best_model = PPO.load(filename, env=self)
+    return super(SlimeVolleySelfPlayEnv, self).reset(seed=seed, options=options)
+
 
 class SelfPlayCallback(EvalCallback):
-  # hacked it to only save new version of best model if beats prev self by BEST_THRESHOLD score
-  # after saving model, resets the best score to be BEST_THRESHOLD
+  # only promote a new champion if it beats the prev self by BEST_THRESHOLD;
+  # after saving, reset the best score to BEST_THRESHOLD
   def __init__(self, *args, **kwargs):
     super(SelfPlayCallback, self).__init__(*args, **kwargs)
     self.best_mean_reward = BEST_THRESHOLD
     self.generation = 0
+
   def _on_step(self) -> bool:
     result = super(SelfPlayCallback, self)._on_step()
     if result and self.best_mean_reward > BEST_THRESHOLD:
@@ -66,40 +73,37 @@ class SelfPlayCallback(EvalCallback):
       print("SELFPLAY: mean_reward achieved:", self.best_mean_reward)
       print("SELFPLAY: new best model, bumping up generation to", self.generation)
       source_file = os.path.join(LOGDIR, "best_model.zip")
-      backup_file = os.path.join(LOGDIR, "history_"+str(self.generation).zfill(8)+".zip")
-      copyfile(source_file, backup_file)
+      backup_file = os.path.join(LOGDIR, "history_" + str(self.generation).zfill(8) + ".zip")
+      if os.path.exists(source_file):
+        copyfile(source_file, backup_file)
       self.best_mean_reward = BEST_THRESHOLD
     return result
 
+
 def rollout(env, policy):
-  """ play one agent vs the other in modified gym-style loop. """
-  obs = env.reset()
-
-  done = False
+  """ play the trained agent against the current champion """
+  obs, _ = env.reset()
+  terminated = False
+  truncated = False
   total_reward = 0
-
-  while not done:
-
-    action, _states = policy.predict(obs)
-    obs, reward, done, _ = env.step(action)
-
+  while not (terminated or truncated):
+    action, _states = policy.predict(obs, deterministic=True)
+    obs, reward, terminated, truncated, _ = env.step(action)
     total_reward += reward
-
-    if RENDER_MODE:
-      env.render()
-
   return total_reward
 
+
 def train():
-  # train selfplay agent
-  logger.configure(folder=LOGDIR)
+  os.makedirs(LOGDIR, exist_ok=True)
+  logger = configure(LOGDIR, ["stdout", "csv"])
 
   env = SlimeVolleySelfPlayEnv()
-  env.seed(SEED)
+  env.reset(seed=SEED)
 
-  # take mujoco hyperparams (but doubled timesteps_per_actorbatch to cover more steps.)
-  model = PPO1(MlpPolicy, env, timesteps_per_actorbatch=4096, clip_param=0.2, entcoeff=0.0, optim_epochs=10,
-                   optim_stepsize=3e-4, optim_batchsize=64, gamma=0.99, lam=0.95, schedule='linear', verbose=2)
+  model = PPO("MlpPolicy", env,
+              n_steps=4096, batch_size=64, n_epochs=10,
+              learning_rate=3e-4, gamma=0.99, gae_lambda=0.95,
+              clip_range=0.2, ent_coef=0.0, verbose=2, seed=SEED)
 
   eval_callback = SelfPlayCallback(env,
     best_model_save_path=LOGDIR,
@@ -108,12 +112,12 @@ def train():
     n_eval_episodes=EVAL_EPISODES,
     deterministic=False)
 
+  model.set_logger(logger)
   model.learn(total_timesteps=NUM_TIMESTEPS, callback=eval_callback)
 
-  model.save(os.path.join(LOGDIR, "final_model")) # probably never get to this point.
-
+  model.save(os.path.join(LOGDIR, "final_model"))
   env.close()
 
-if __name__=="__main__":
 
+if __name__ == "__main__":
   train()

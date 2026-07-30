@@ -5,7 +5,7 @@
 import os
 import json
 import numpy as np
-import gym
+import gymnasium as gym
 import slimevolleygym
 import slimevolleygym.mlp as mlp
 from slimevolleygym.mlp import Model
@@ -41,9 +41,9 @@ print("Number of parameters of the neural net policy:", param_count) # 273 for s
 population = np.random.normal(size=(population_size, param_count)) * 0.5 # each row is an agent.
 winning_streak = [0] * population_size # store the number of wins for this agent (including mutated ones)
 
-# create the gym environment, and seed it
+# create the gym environment, and seed it (seed is now passed to reset)
 env = gym.make("SlimeVolley-v0")
-env.seed(random_seed)
+env.reset(seed=random_seed)
 np.random.seed(random_seed)
 
 history = []
