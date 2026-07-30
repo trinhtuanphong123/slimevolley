@@ -1,5 +1,7 @@
 # Slime Volleyball Gym Environment
 
+![CI](https://github.com/trinhtuanphong123/slimevolley/actions/workflows/ci.yml/badge.svg)
+
 <p align="left">
   <img width="100%" src="https://otoro.net/img/slimegym/pixel.gif"></img>
 </p>
