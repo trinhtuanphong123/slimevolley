@@ -14,12 +14,11 @@ No dependencies apart from Numpy and Gym
 
 import logging
 import math
-import gym
-from gym import spaces
-from gym.utils import seeding
-from gym.envs.registration import register
+import gymnasium as gym
+from gymnasium import spaces
+from gymnasium.envs.registration import register
 import numpy as np
-import cv2 # installed with gym anyways
+import cv2 # only used for the pixel-observation rendering path
 from collections import deque
 
 np.set_printoptions(threshold=20, precision=3, suppress=True, linewidth=200)
@@ -101,7 +100,7 @@ rendering = None
 def checkRendering():
   global rendering
   if rendering is None:
-    from gym.envs.classic_control import rendering as rendering
+    from slimevolleygym import _rendering as rendering
 
 def setPixelObsMode():
   """
@@ -348,8 +347,8 @@ class RelativeState:
               self.bx, self.by, self.bvx, self.bvy,
               self.ox, self.oy, self.ovx, self.ovy]
     scaleFactor = 10.0  # scale inputs to be in the order of magnitude of 10 for neural network.
-    result = np.array(result) / scaleFactor
-    return result
+    result = np.asarray(result, dtype=np.float32) / scaleFactor
+    return np.asarray(result, dtype=np.float32)
 
 class Agent:
   """ keeps track of the agent in the game. note this is not the policy network """
@@ -648,8 +647,8 @@ class SlimeVolleyEnv(gym.Env):
   for the left agent is the negative of this number.
   """
   metadata = {
-    'render.modes': ['human', 'rgb_array', 'state'],
-    'video.frames_per_second' : 50
+    'render_modes': ['human', 'rgb_array'],
+    'video.frames_per_second': 50
   }
 
   # for compatibility with typical atari wrappers
@@ -694,7 +693,7 @@ class SlimeVolleyEnv(gym.Env):
   survival_bonus = False # Depreciated: augment reward, easier to train
   multiagent = True # optional args anyways
 
-  def __init__(self):
+  def __init__(self, render_mode=None):
     """
     Reward modes:
 
@@ -711,7 +710,14 @@ class SlimeVolleyEnv(gym.Env):
 
     Setting self.from_pixels to True makes the observation with multiples
     of 84, since usual atari wrappers downsample to 84x84
+
+    :param render_mode: ('human' | 'rgb_array') Gymnasium render mode, set at
+                        construction via gym.make(..., render_mode=...). None
+                        means no rendering (fastest, headless).
     """
+
+    self.render_mode = render_mode
+    self.np_random = np.random.default_rng()
 
     self.t = 0
     self.t_limit = 3000
@@ -727,8 +733,8 @@ class SlimeVolleyEnv(gym.Env):
       self.observation_space = spaces.Box(low=0, high=255,
         shape=(PIXEL_HEIGHT, PIXEL_WIDTH, 3), dtype=np.uint8)
     else:
-      high = np.array([np.finfo(np.float32).max] * 12)
-      self.observation_space = spaces.Box(-high, high)
+      high = np.array([np.finfo(np.float32).max] * 12, dtype=np.float32)
+      self.observation_space = spaces.Box(-high, high, dtype=np.float32)
     self.canvas = None
     self.previous_rgbarray = None
 
@@ -742,19 +748,21 @@ class SlimeVolleyEnv(gym.Env):
     # another avenue to override the built-in AI's action, going past many env wraps:
     self.otherAction = None
 
-  def seed(self, seed=None):
-    self.np_random, seed = seeding.np_random(seed)
-    self.game = Game(np_random=self.np_random)
-    self.ale = self.game.agent_right # for compatibility for some models that need the self.ale.lives() function
-    return [seed]
-
   def getObs(self):
     if self.from_pixels:
-      obs = self.render(mode='state')
+      obs = self._render_pixel_frame()
       self.canvas = obs
     else:
       obs = self.game.agent_right.getObservation()
     return obs
+
+  def _render_pixel_frame(self):
+    # render the game onto a fresh canvas and downscale to pixel-obs resolution
+    canvas = None
+    canvas = self.game.display(canvas)
+    canvas = downsize_image(canvas)
+    self.canvas = canvas
+    return canvas
 
   def discreteToBox(self, n):
     # convert discrete action n into the actual triplet action
@@ -769,8 +777,11 @@ class SlimeVolleyEnv(gym.Env):
     baseAction is only used if multiagent mode is True
     note: although the action space is multi-binary, float vectors
     are fine (refer to setAction() to see how they get interpreted)
+
+    Returns the Gymnasium 5-tuple (obs, reward, terminated, truncated, info).
+    A side running out of lives is a true terminal (terminated); reaching the
+    3000-step time limit is a truncation.
     """
-    done = False
     self.t += 1
 
     if self.otherAction is not None:
@@ -791,11 +802,16 @@ class SlimeVolleyEnv(gym.Env):
 
     obs = self.getObs()
 
-    if self.t >= self.t_limit:
-      done = True
+    terminated = False
+    truncated = False
 
+    # a side running out of lives is a genuine terminal state of the MDP
     if self.game.agent_left.life <= 0 or self.game.agent_right.life <= 0:
-      done = True
+      terminated = True
+
+    # hitting the 3000-step time limit is a truncation, not a terminal state
+    if self.t >= self.t_limit:
+      truncated = True
 
     otherObs = None
     if self.multiagent:
@@ -813,16 +829,21 @@ class SlimeVolleyEnv(gym.Env):
     }
 
     if self.survival_bonus:
-      return obs, reward+0.01, done, info
-    return obs, reward, done, info
+      return obs, reward + 0.01, terminated, truncated, info
+    return obs, reward, terminated, truncated, info
 
   def init_game_state(self):
     self.t = 0
-    self.game.reset()
+    # rebuild the game using the (possibly re-seeded) RNG so reset(seed=...)
+    # produces deterministic episodes
+    self.game = Game(np_random=self.np_random)
+    self.ale = self.game.agent_right # for compatibility for some models that need the self.ale.lives() function
 
-  def reset(self):
+  def reset(self, *, seed=None, options=None):
+    # super().reset seeds self.np_random when a seed is supplied
+    super().reset(seed=seed)
     self.init_game_state()
-    return self.getObs()
+    return self.getObs(), {}
 
   def checkViewer(self):
     # for opengl viewer
@@ -830,42 +851,30 @@ class SlimeVolleyEnv(gym.Env):
       checkRendering()
       self.viewer = rendering.SimpleImageViewer(maxwidth=2160) # macbook pro resolution
 
-  def render(self, mode='human', close=False):
-
+  def render(self):
+    # Gymnasium convention: render mode is fixed at construction (self.render_mode).
+    # Returns an rgb array for 'rgb_array'; displays to a window for 'human';
+    # does nothing (returns None) when render_mode is None (headless training).
+    if self.render_mode is None:
+      return None
     if PIXEL_MODE:
-      if self.canvas is not None: # already rendered
-        rgb_array = self.canvas
-        self.canvas = None
-        if mode == 'rgb_array' or mode == 'human':
-          self.checkViewer()
-          larger_canvas = upsize_image(rgb_array)
-          self.viewer.imshow(larger_canvas)
-          if (mode=='rgb_array'):
-            return larger_canvas
-          else:
-            return
-
-      self.canvas = self.game.display(self.canvas)
-      # scale down to original res (looks better than rendering directly to lower res)
-      self.canvas = downsize_image(self.canvas)
-
-      if mode=='state':
-        return np.copy(self.canvas)
-
-      # upsampling w/ nearest interp method gives a retro "pixel" effect look
-      larger_canvas = upsize_image(self.canvas)
-      self.checkViewer()
-      self.viewer.imshow(larger_canvas)
-      if (mode=='rgb_array'):
+      frame = self._render_pixel_frame()
+      larger_canvas = upsize_image(frame) # nearest-neighbour upsample for a retro look
+      if self.render_mode == 'rgb_array':
         return larger_canvas
+      elif self.render_mode == 'human':
+        self.checkViewer()
+        self.viewer.imshow(larger_canvas)
+        return
+      return
 
-    else: # pyglet renderer
+    else: # pyglet (smooth) renderer
       if self.viewer is None:
         checkRendering()
-        self.viewer = rendering.Viewer(WINDOW_WIDTH, WINDOW_HEIGHT)
-
+        visible = self.render_mode != 'rgb_array'
+        self.viewer = rendering.Viewer(WINDOW_WIDTH, WINDOW_HEIGHT, visible=visible)
       self.game.display(self.viewer)
-      return self.viewer.render(return_rgb_array = mode=='rgb_array')
+      return self.viewer.render(return_rgb_array=(self.render_mode == 'rgb_array'))
 
   def close(self):
     if self.viewer:
@@ -921,16 +930,16 @@ class FrameStack(gym.Wrapper):
     self.observation_space = spaces.Box(low=0, high=255, shape=(shp[0], shp[1], shp[2] * n_frames),
                                         dtype=env.observation_space.dtype)
 
-  def reset(self):
-    obs = self.env.reset()
+  def reset(self, **kwargs):
+    obs, info = self.env.reset(**kwargs)
     for _ in range(self.n_frames):
         self.frames.append(obs)
-    return self._get_ob()
+    return self._get_ob(), info
 
   def step(self, action):
-    obs, reward, done, info = self.env.step(action)
+    obs, reward, terminated, truncated, info = self.env.step(action)
     self.frames.append(obs)
-    return self._get_ob(), reward, done, info
+    return self._get_ob(), reward, terminated, truncated, info
 
   def _get_ob(self):
     assert len(self.frames) == self.n_frames
@@ -945,7 +954,7 @@ def multiagent_rollout(env, policy_right, policy_left, render_mode=False):
   play one agent vs the other in modified gym-style loop.
   important: returns the score from perspective of policy_right.
   """
-  obs_right = env.reset()
+  obs_right, _ = env.reset()
   obs_left = obs_right # same observation at the very beginning for the other agent
 
   done = False
@@ -958,9 +967,10 @@ def multiagent_rollout(env, policy_right, policy_left, render_mode=False):
     action_left = policy_left.predict(obs_left)
 
     # uses a 2nd (optional) parameter for step to put in the other action
-    # and returns the other observation in the 4th optional "info" param in gym's step()
-    obs_right, reward, done, info = env.step(action_right, action_left)
+    # and returns the other observation in the 'otherObs' field of info
+    obs_right, reward, terminated, truncated, info = env.step(action_right, action_left)
     obs_left = info['otherObs']
+    done = terminated or truncated
 
     total_reward += reward
     t += 1
@@ -997,24 +1007,35 @@ def render_atari(obs):
 # Reg envs for gym #
 ####################
 
+# order_enforce=False and disable_env_checker=True keep the raw environment so
+# the non-standard multi-agent step(action, otherAction) signature still works
+# through gym.make(...), matching the original slimevolleygym API.
 register(
     id='SlimeVolley-v0',
-    entry_point='slimevolleygym.slimevolley:SlimeVolleyEnv'
+    entry_point='slimevolleygym.slimevolley:SlimeVolleyEnv',
+    order_enforce=False,
+    disable_env_checker=True
 )
 
 register(
     id='SlimeVolleyPixel-v0',
-    entry_point='slimevolleygym.slimevolley:SlimeVolleyPixelEnv'
+    entry_point='slimevolleygym.slimevolley:SlimeVolleyPixelEnv',
+    order_enforce=False,
+    disable_env_checker=True
 )
 
 register(
     id='SlimeVolleyNoFrameskip-v0',
-    entry_point='slimevolleygym.slimevolley:SlimeVolleyAtariEnv'
+    entry_point='slimevolleygym.slimevolley:SlimeVolleyAtariEnv',
+    order_enforce=False,
+    disable_env_checker=True
 )
 
 register(
     id='SlimeVolleySurvivalNoFrameskip-v0',
-    entry_point='slimevolleygym.slimevolley:SlimeVolleySurvivalAtariEnv'
+    entry_point='slimevolleygym.slimevolley:SlimeVolleySurvivalAtariEnv',
+    order_enforce=False,
+    disable_env_checker=True
 )
 
 if __name__=="__main__":
@@ -1065,16 +1086,15 @@ if __name__=="__main__":
 
   policy = BaselinePolicy() # defaults to use RNN Baseline for player
 
-  env = SlimeVolleyEnv()
-  env.seed(np.random.randint(0, 10000))
-  #env.seed(721)
+  env = SlimeVolleyEnv(render_mode='human' if RENDER_MODE else None)
+  # seeding is now done via reset(seed=...) instead of env.seed()
 
   if RENDER_MODE:
     env.render()
     env.viewer.window.on_key_press = key_press
     env.viewer.window.on_key_release = key_release
 
-  obs = env.reset()
+  obs, _ = env.reset(seed=int(np.random.randint(0, 10000)))
 
   steps = 0
   total_reward = 0
@@ -1091,9 +1111,10 @@ if __name__=="__main__":
 
     if otherManualMode:
       otherAction = otherManualAction
-      obs, reward, done, _ = env.step(action, otherAction)
+      obs, reward, terminated, truncated, _ = env.step(action, otherAction)
     else:
-      obs, reward, done, _ = env.step(action)
+      obs, reward, terminated, truncated, _ = env.step(action)
+    done = terminated or truncated
 
     if reward > 0 or reward < 0:
       print("reward", reward)
