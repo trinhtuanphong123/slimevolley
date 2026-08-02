@@ -6,7 +6,7 @@ from slimevolleygym.slimevolley import *
 # supported range (the two libraries drift independently). Emits at most a
 # warning; never breaks import.
 try:
-    from slimevolleygym._compat import verify_compatibility
+    from slimevolleygym.slimevolley import verify_compatibility
     verify_compatibility()
 except Exception:
     pass

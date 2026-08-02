@@ -154,7 +154,8 @@ if __name__ == "__main__":
     print("path of left model", path1)
 
   if c0.startswith("ppo") or c1.startswith("ppo"):
-    from stable_baselines3 import PPO
+    from stable_baselines3 import PPO as _PPO
+    PPO = _PPO  # rebind the module-level name used by PPOPolicy
 
   policy0 = MODEL[c0](path0)  # the right agent
   policy1 = MODEL[c1](path1)  # the left agent

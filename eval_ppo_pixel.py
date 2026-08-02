@@ -11,9 +11,10 @@ import argparse
 import gymnasium as gym
 import slimevolleygym
 from slimevolleygym import render_atari, FrameStack
-from slimevolleygym._rendering import SimpleImageViewer
+from slimevolleygym.slimevolley import rendering, checkRendering
 from stable_baselines3 import PPO
-from stable_baselines3.common.atari_wrappers import AtariWrapper
+from stable_baselines3.common.atari_wrappers import MaxAndSkipEnv
+from gymnasium.wrappers import GrayscaleObservation, ResizeObservation
 from time import sleep
 
 RENDER_ATARI = True  # render the downsampled 84x84x4 grayscale inputs
@@ -21,14 +22,16 @@ RENDER_ATARI = True  # render the downsampled 84x84x4 grayscale inputs
 
 def make_env(seed):
     env = gym.make("SlimeVolleyNoFrameskip-v0")
-    env = AtariWrapper(env, clip_reward=False)
+    env = MaxAndSkipEnv(env, skip=4)
+    env = ResizeObservation(env, (84, 84))
+    env = GrayscaleObservation(env, keep_dim=True)
     env = FrameStack(env, 4)
     env.reset(seed=seed)
     return env
 
 
 def rollout(env, model, viewer):
-    obs = env.reset()
+    obs, _ = env.reset()
     cumulative_reward = 0
     terminated = False
     truncated = False
@@ -56,7 +59,8 @@ if __name__ == '__main__':
     env = make_env(args.seed)
     model = PPO.load(args.model_path)
 
-    viewer = SimpleImageViewer(maxwidth=2160) if RENDER_ATARI else None
+    checkRendering()
+    viewer = rendering.SimpleImageViewer(maxwidth=2160) if RENDER_ATARI else None
 
     rewards = []
     for i in range(1000):

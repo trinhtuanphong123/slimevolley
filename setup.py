@@ -9,15 +9,15 @@ setup(
     packages=['slimevolleygym'],
     python_requires='>=3.9',
     install_requires=[
-        'gymnasium>=1.0',
+        'gymnasium>=1.3.0',
         'numpy>=1.24',
         'opencv-python>=4.0',
-        'pyglet>=1.5',
+        'pyglet>=1.5,<2.0',
     ],
     extras_require={
         # install with: pip install -e .[training]
         'training': [
-            'stable-baselines3>=2.3',
+            'stable-baselines3>=2.9.0',
             'torch>=2.0',
             'tensorboard>=2.9',
         ],

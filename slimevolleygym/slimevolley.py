@@ -95,12 +95,177 @@ def setDayColors():
 
 setNightColors()
 
-# by default, don't load rendering (since we want to use it in headless cloud machines)
-rendering = None
+class _DummyRendering:
+  pass
+rendering = _DummyRendering()
+_rendering_loaded = False
+
 def checkRendering():
-  global rendering
-  if rendering is None:
-    from slimevolleygym import _rendering as rendering
+  global _rendering_loaded
+  if _rendering_loaded:
+    return
+  _rendering_loaded = True
+
+  import math
+  import numpy as np
+  import pyglet
+  from pyglet import gl
+
+  class Attr:
+    def enable(self): pass
+    def disable(self): pass
+
+  class Color(Attr):
+    def __init__(self, vec4): self.vec4 = vec4
+    def enable(self): gl.glColor4f(*self.vec4)
+
+  class Transform(Attr):
+    def __init__(self, translation=(0.0, 0.0), rotation=0.0, scale=(1.0, 1.0)):
+      self.set_translation(*translation)
+      self.set_rotation(rotation)
+      self.set_scale(*scale)
+    def set_translation(self, x, y): self.translation = (float(x), float(y))
+    def set_rotation(self, rot): self.rotation = float(rot)
+    def set_scale(self, sx, sy): self.scale = (float(sx), float(sy))
+    def enable(self):
+      gl.glPushMatrix()
+      gl.glTranslatef(self.translation[0], self.translation[1], 0.0)
+      gl.glRotatef(self.rotation, 0.0, 0.0, 1.0)
+      gl.glScalef(self.scale[0], self.scale[1], 1.0)
+    def disable(self):
+      gl.glPopMatrix()
+
+  class Geom:
+    def __init__(self):
+      self._color = Color((0.0, 0.0, 0.0, 1.0))
+      self.attrs = [self._color]
+    def render(self):
+      for attr in self.attrs: attr.enable()
+      self.render1()
+      for attr in reversed(self.attrs): attr.disable()
+    def render1(self): raise NotImplementedError
+    def add_attr(self, attr): self.attrs.append(attr)
+    def set_color(self, *args):
+      if len(args) == 3: self._color.vec4 = (float(args[0]), float(args[1]), float(args[2]), 1.0)
+      else: self._color.vec4 = tuple(float(c) for c in args)
+
+  def _flatten(v):
+    flat = []
+    for (x, y) in v:
+      flat.append(float(x))
+      flat.append(float(y))
+    return flat
+
+  class FilledPolygon(Geom):
+    def __init__(self, v):
+      super().__init__()
+      self.v = v
+    def render1(self):
+      n = len(self.v)
+      gl.glEnable(gl.GL_BLEND)
+      gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+      pyglet.graphics.draw(n, gl.GL_POLYGON, ('v2f', _flatten(self.v)))
+      gl.glDisable(gl.GL_BLEND)
+
+  class PolyLine(Geom):
+    def __init__(self, v, close):
+      super().__init__()
+      self.v = v
+      self.close = close
+    def render1(self):
+      n = len(self.v)
+      mode = gl.GL_LINE_LOOP if self.close else gl.GL_LINE_STRIP
+      pyglet.graphics.draw(n, mode, ('v2f', _flatten(self.v)))
+
+  def _make_polygon(v, filled=True):
+    if filled: return FilledPolygon(v)
+    return PolyLine(v, True)
+
+  def _make_circle(radius=10, res=30, filled=True):
+    points = []
+    for i in range(res):
+      ang = 2 * math.pi * i / res
+      points.append((math.cos(ang) * radius, math.sin(ang) * radius))
+    if filled: return FilledPolygon(points)
+    return PolyLine(points, True)
+
+  class Viewer:
+    def __init__(self, width, height, display=None, visible=True):
+      self.width = width
+      self.height = height
+      self.window = pyglet.window.Window(width=width, height=height, display=display, visible=visible)
+      self.window.on_close = self.window_closed_by_user
+      self.geoms = []
+      self.onetime_geoms = []
+      self.transform = Transform()
+      gl.glViewport(0, 0, width, height)
+      gl.glMatrixMode(gl.GL_PROJECTION)
+      gl.glLoadIdentity()
+      gl.glOrtho(0, width, 0, height, -1, 1)
+      gl.glMatrixMode(gl.GL_MODELVIEW)
+    def close(self):
+      try: self.window.close()
+      except Exception: pass
+    def window_closed_by_user(self): self.close()
+    def add_geom(self, geom): self.geoms.append(geom)
+    def add_onetime(self, geom): self.onetime_geoms.append(geom)
+    def render(self, return_rgb_array=False):
+      self.window.switch_to()
+      self.window.dispatch_events()
+      gl.glClearColor(0.0, 0.0, 0.0, 1.0)
+      gl.glClear(gl.GL_COLOR_BUFFER_BIT)
+      self.transform.enable()
+      for geom in self.geoms: geom.render()
+      for geom in self.onetime_geoms: geom.render()
+      self.transform.disable()
+      arr = None
+      if return_rgb_array:
+        buffer = pyglet.image.get_buffer_manager().get_color_buffer()
+        image_data = buffer.get_image_data()
+        arr = np.frombuffer(image_data.get_data('RGBA', buffer.width * 4), dtype=np.uint8)
+        arr = arr.reshape(buffer.height, buffer.width, 4)
+        arr = arr[::-1, :, 0:3]
+      self.window.flip()
+      self.onetime_geoms = []
+      return arr
+
+  class SimpleImageViewer:
+    def __init__(self, display=None, maxwidth=500):
+      self.display = display
+      self.maxwidth = maxwidth
+      self.window = None
+      self.width = None
+      self.height = None
+      self.isopen = False
+    def imshow(self, arr):
+      arr = np.ascontiguousarray(arr)
+      if self.window is None:
+        h, w = arr.shape[:2]
+        self.width = w
+        self.height = h
+        self.window = pyglet.window.Window(width=w, height=h, display=self.display)
+        self.window.on_close = self.close
+        self.isopen = True
+      self.window.switch_to()
+      self.window.dispatch_events()
+      image = pyglet.image.ImageData(self.width, self.height, 'RGB', arr.tobytes(), pitch=self.width * -3)
+      self.window.clear()
+      image.blit(0, 0)
+      self.window.flip()
+    def close(self):
+      if self.isopen and self.window is not None:
+        self.window.close()
+        self.isopen = False
+        self.window = None
+    def __bool__(self): return self.isopen
+
+  rendering.FilledPolygon = FilledPolygon
+  rendering.PolyLine = PolyLine
+  rendering.Transform = Transform
+  rendering.make_polygon = _make_polygon
+  rendering.make_circle = _make_circle
+  rendering.Viewer = Viewer
+  rendering.SimpleImageViewer = SimpleImageViewer
 
 def setPixelObsMode():
   """
@@ -533,7 +698,10 @@ class Game:
   the main slime volley game.
   can be used in various settings, such as ai vs ai, ai vs human, human vs human
   """
-  def __init__(self, np_random=np.random):
+  def __init__(self, np_random=None):
+    if np_random is None:
+      np_random = np.random.default_rng()
+    self.np_random = np_random
     self.ball = None
     self.ground = None
     self.fence = None
@@ -648,7 +816,7 @@ class SlimeVolleyEnv(gym.Env):
   """
   metadata = {
     'render_modes': ['human', 'rgb_array'],
-    'video.frames_per_second': 50
+    'render_fps': 50
   }
 
   # for compatibility with typical atari wrappers
@@ -717,7 +885,6 @@ class SlimeVolleyEnv(gym.Env):
     """
 
     self.render_mode = render_mode
-    self.np_random = np.random.default_rng()
 
     self.t = 0
     self.t_limit = 3000
@@ -738,7 +905,7 @@ class SlimeVolleyEnv(gym.Env):
     self.canvas = None
     self.previous_rgbarray = None
 
-    self.game = Game()
+    self.game = Game(np_random=self.np_random)
     self.ale = self.game.agent_right # for compatibility for some models that need the self.ale.lives() function
 
     self.policy = BaselinePolicy() # the “bad guy”
@@ -985,9 +1152,14 @@ def render_atari(obs):
   Helper function that takes in a processed obs (84,84,4)
   Useful for visualizing what an Atari agent actually *sees*
   Outputs in Atari visual format (Top: resized to orig dimensions, buttom: 4 frames)
+
+  Handles both the old AtariWrapper (float [0,1]) and the new
+  GrayscaleObservation (uint8 [0,255]) observation formats.
   """
   tempObs = []
   obs = np.copy(obs)
+  # Old AtariWrapper normalized to float [0,1]; new wrappers keep uint8 [0,255]
+  needs_scaling = obs.dtype != np.uint8
   for i in range(4):
     if i == 3:
       latest = np.copy(obs[:, :, i])
@@ -995,11 +1167,17 @@ def render_atari(obs):
       obs[:, 0, i] = 141
     tempObs.append(obs[:, :, i])
   latest = np.expand_dims(latest, axis=2)
-  latest = np.concatenate([latest*255.0] * 3, axis=2).astype(np.uint8)
+  if needs_scaling:
+    latest = np.concatenate([latest*255.0] * 3, axis=2).astype(np.uint8)
+  else:
+    latest = np.concatenate([latest] * 3, axis=2)  # already uint8
   latest = cv2.resize(latest, (84 * 8, 84 * 4), interpolation=cv2.INTER_NEAREST)
   tempObs = np.concatenate(tempObs, axis=1)
   tempObs = np.expand_dims(tempObs, axis=2)
-  tempObs = np.concatenate([tempObs*255.0] * 3, axis=2).astype(np.uint8)
+  if needs_scaling:
+    tempObs = np.concatenate([tempObs*255.0] * 3, axis=2).astype(np.uint8)
+  else:
+    tempObs = np.concatenate([tempObs] * 3, axis=2)  # already uint8
   tempObs = cv2.resize(tempObs, (84 * 8, 84 * 2), interpolation=cv2.INTER_NEAREST)
   return np.concatenate([latest, tempObs], axis=0)
 
@@ -1037,6 +1215,65 @@ register(
     order_enforce=False,
     disable_env_checker=True
 )
+
+def verify_compatibility(raise_on_mismatch: bool = False) -> bool:
+    """Warn (or raise) if installed Gymnasium is outside SB3's supported range.
+
+    Returns True when compatible, or when the check cannot be performed (SB3 not
+    installed, packaging unavailable, metadata unparseable). This means it is safe
+    to call from package import: it only ever emits a warning unless explicitly
+    asked to raise.
+    """
+    import warnings
+
+    def _get_gymnasium_version():
+        try:
+            from importlib import metadata
+            return metadata.version("gymnasium")
+        except Exception:
+            return None
+
+    def _get_sb3_gymnasium_spec():
+        try:
+            from importlib import metadata
+        except Exception:  # pragma: no cover
+            return None
+        try:
+            requires = metadata.distribution("stable_baselines3").requires or []
+        except Exception:
+            return None  # SB3 not installed -> nothing to check
+        for req in requires:
+            name = req.split(";")[0].strip()  # drop environment markers
+            if name.lower().startswith("gymnasium"):
+                spec = name[len("gymnasium"):].strip()
+                return spec or None
+        return None
+
+    gym_version = _get_gymnasium_version()
+    spec = _get_sb3_gymnasium_spec()
+    if gym_version is None or not spec:
+        return True
+
+    try:
+        from packaging.specifiers import SpecifierSet
+        from packaging.version import Version
+    except Exception:
+        return True  # packaging unavailable -> can't verify, don't block
+
+    specifier = SpecifierSet(spec)
+    if specifier.contains(Version(gym_version), prereleases=True):
+        return True
+
+    msg = (
+        f"slimevolleygym: installed gymnasium {gym_version} is outside "
+        f"stable-baselines3's supported range ({spec}). SB3 (used by the training/"
+        f"eval scripts) may break. Pin a compatible version, e.g. "
+        f"pip install \"gymnasium{spec}\"."
+    )
+    if raise_on_mismatch:
+        raise ImportError(msg)
+    warnings.warn(msg, RuntimeWarning, stacklevel=2)
+    return False
 
 if __name__=="__main__":
   """

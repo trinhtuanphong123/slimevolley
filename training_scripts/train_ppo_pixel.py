@@ -13,7 +13,8 @@ import gymnasium as gym
 import slimevolleygym
 
 from stable_baselines3 import PPO
-from stable_baselines3.common.atari_wrappers import AtariWrapper
+from stable_baselines3.common.atari_wrappers import MaxAndSkipEnv
+from gymnasium.wrappers import GrayscaleObservation, ResizeObservation
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.logger import configure
@@ -27,12 +28,14 @@ LOGDIR = "ppo_cnn"     # moved to zoo afterwards.
 
 
 def make_env(env_id, seed):
-    # AtariWrapper performs the usual Atari pre-processing (random no-ops,
-    # frame skip 4, 84x84 grayscale warp, 4-frame stack). clip_reward=False keeps
-    # the small survival bonus (+0.01), matching the original training setup.
+    # Explicit pre-processing wrappers (replacing AtariWrapper which squashed
+    # the 84x168 SlimeVolley image to 84x84): frame skip 4, grayscale, resize,
+    # then 4-frame stack. clip_reward is not needed (survival bonus is small).
     def _init():
         env = gym.make(env_id)
-        env = AtariWrapper(env, clip_reward=False)
+        env = MaxAndSkipEnv(env, skip=4)
+        env = ResizeObservation(env, (84, 84))
+        env = GrayscaleObservation(env, keep_dim=True)
         env = FrameStack(env, 4)
         env.reset(seed=seed)
         return env

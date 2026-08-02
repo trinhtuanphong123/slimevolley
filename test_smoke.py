@@ -85,7 +85,7 @@ def test_sb3():
     try:
         from stable_baselines3 import PPO
         from stable_baselines3.common.monitor import Monitor
-        from stable_baselines3.common.atari_wrappers import AtariWrapper
+        from stable_baselines3.common.atari_wrappers import MaxAndSkipEnv
     except ImportError:
         print("  skip - stable-baselines3 not installed (pip install slimevolleygym[training])")
         return

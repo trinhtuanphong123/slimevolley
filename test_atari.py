@@ -9,8 +9,9 @@ import numpy as np
 import gymnasium as gym
 import slimevolleygym
 from slimevolleygym import render_atari, FrameStack
-from slimevolleygym._rendering import SimpleImageViewer
-from stable_baselines3.common.atari_wrappers import AtariWrapper
+from slimevolleygym.slimevolley import rendering, checkRendering
+from stable_baselines3.common.atari_wrappers import MaxAndSkipEnv
+from gymnasium.wrappers import GrayscaleObservation, ResizeObservation
 from pyglet.window import key
 from time import sleep
 
@@ -63,11 +64,14 @@ if __name__ == "__main__":
     if k == key.RIGHT: manualAction[1] = 0
     if k == key.UP:    manualAction[2] = 0
 
-  viewer = SimpleImageViewer(maxwidth=2160)
+  checkRendering()
+  viewer = rendering.SimpleImageViewer(maxwidth=2160)
 
   env = gym.make("SlimeVolleyNoFrameskip-v0")
-  # standard Atari pre-processing: random no-ops, frame skip 4, 84x84 grayscale warp, then 4-frame stack
-  env = AtariWrapper(env, clip_reward=False)
+  # Explicit wrappers replacing AtariWrapper (which squashed the 84x168 aspect ratio)
+  env = MaxAndSkipEnv(env, skip=4)
+  env = ResizeObservation(env, (84, 84))
+  env = GrayscaleObservation(env, keep_dim=True)
   env = FrameStack(env, 4)
   obs, _ = env.reset(seed=689)
 

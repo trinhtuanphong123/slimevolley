@@ -11,7 +11,7 @@ import slimevolleygym
 from time import sleep
 from pyglet.window import key
 
-from slimevolleygym._rendering import rendering # to show actual obs2
+from slimevolleygym.slimevolley import rendering, checkRendering
 
 if __name__=="__main__":
 
@@ -32,9 +32,10 @@ if __name__=="__main__":
     if k == key.RIGHT: manualAction[1] = 0
     if k == key.UP:    manualAction[2] = 0
 
+  checkRendering()
   viewer = rendering.SimpleImageViewer(maxwidth=2160)
 
-  env = gym.make("SlimeVolleySurvivalNoFrameskip-v0", render_mode="human")
+  env = gym.make("SlimeVolleyPixel-v0", render_mode="human")
 
   policy = slimevolleygym.BaselinePolicy() # throw in a default policy (based on state, not pixels)
 

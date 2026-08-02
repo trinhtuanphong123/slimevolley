@@ -16,9 +16,9 @@ import slimevolleygym
 from stable_baselines3 import PPO
 
 
-def rollout(env, policy, render_mode=False):
+def rollout(env, policy, render_mode=False, seed=None):
   """ play the trained agent against the built-in baseline policy """
-  obs, _ = env.reset()
+  obs, _ = env.reset(seed=seed)
   terminated = False
   truncated = False
   total_reward = 0
@@ -53,8 +53,7 @@ if __name__ == "__main__":
 
   history = []
   for i in range(1000):
-    env.reset(seed=i)
-    cumulative_score = rollout(env, policy, render_mode)
+    cumulative_score = rollout(env, policy, render_mode, seed=i)
     print("cumulative score #", i, ":", cumulative_score)
     history.append(cumulative_score)
 

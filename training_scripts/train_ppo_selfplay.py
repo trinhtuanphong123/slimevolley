@@ -15,6 +15,7 @@ import slimevolleygym
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.logger import configure
+from stable_baselines3.common.monitor import Monitor
 from shutil import copyfile
 
 # Settings
@@ -29,8 +30,8 @@ LOGDIR = "ppo_selfplay"
 
 class SlimeVolleySelfPlayEnv(slimevolleygym.SlimeVolleyEnv):
   # the normal single-player env, but the opponent is the best self-play model
-  def __init__(self):
-    super(SlimeVolleySelfPlayEnv, self).__init__()
+  def __init__(self, render_mode=None):
+    super(SlimeVolleySelfPlayEnv, self).__init__(render_mode=render_mode)
     self.policy = self          # the opponent policy is 'self'
     self.best_model = None
     self.best_model_filename = None
@@ -97,15 +98,18 @@ def train():
   os.makedirs(LOGDIR, exist_ok=True)
   logger = configure(LOGDIR, ["stdout", "csv"])
 
-  env = SlimeVolleySelfPlayEnv()
+  env = Monitor(SlimeVolleySelfPlayEnv())
   env.reset(seed=SEED)
+
+  eval_env = Monitor(SlimeVolleySelfPlayEnv())
+  eval_env.reset(seed=SEED + 1)
 
   model = PPO("MlpPolicy", env,
               n_steps=4096, batch_size=64, n_epochs=10,
               learning_rate=3e-4, gamma=0.99, gae_lambda=0.95,
               clip_range=0.2, ent_coef=0.0, verbose=2, seed=SEED)
 
-  eval_callback = SelfPlayCallback(env,
+  eval_callback = SelfPlayCallback(eval_env,
     best_model_save_path=LOGDIR,
     log_path=LOGDIR,
     eval_freq=EVAL_FREQ,
