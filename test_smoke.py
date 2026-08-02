@@ -73,8 +73,7 @@ def test_policies():
     score, steps = multiagent_rollout(env, BaselinePolicy(), BaselinePolicy())
     check(isinstance(score, (int, float)) and steps > 0, "multiagent_rollout runs a full episode")
 
-    cma = makeSlimePolicy("zoo/cmaes/slimevolley.cma.64.96.best.json")
-    check(np.asarray(cma.predict(obs)).shape == (3,), "CMA-ES JSON model loads and predicts")
+
     ga = makeSlimePolicyLite("zoo/ga_sp/ga.json")
     check(np.asarray(ga.predict(obs)).shape == (3,), "GA JSON model loads and predicts")
     env.close()

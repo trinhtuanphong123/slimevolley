@@ -12,16 +12,6 @@ Game = namedtuple('Game', ['env_name', 'time_factor', 'input_size', 'output_size
 
 games = {}
 
-games['slimevolley'] = Game(env_name='SlimeVolley',
-  input_size=12,
-  output_size=3,
-  time_factor=0,
-  layers=[20, 20], # hidden size of 20x20 neurons
-  activation='tanh',
-  noise_bias=0.0,
-  output_noise=[False, False, False],
-  rnn_mode=False,
-)
 
 games['slimevolleylite'] = Game(env_name='SlimeVolley',
   input_size=12,
@@ -34,10 +24,6 @@ games['slimevolleylite'] = Game(env_name='SlimeVolley',
   rnn_mode=False,
 )
 
-def makeSlimePolicy(filename):
-  model = Model(games['slimevolley']) 
-  model.load_model(filename)
-  return model
 
 def makeSlimePolicyLite(filename):
   model = Model(games['slimevolleylite']) 

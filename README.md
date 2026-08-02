@@ -28,11 +28,11 @@ This environment is based on [Neural Slime Volleyball](https://otoro.net/slimevo
 
 - The Gymnasium API differs from old Gym: `step()` returns the 5-tuple `(obs, reward, terminated, truncated, info)`, `reset()` returns `(obs, info)`, and rendering is selected via `render_mode` at construction (e.g. `gym.make("SlimeVolley-v0", render_mode="human")`). `env.seed()` is gone — pass the seed to `reset(seed=...)`.
 
-- Rendering is implemented with a small self-contained pyglet viewer in `slimevolleygym/_rendering.py`, since the old `gym.envs.classic_control.rendering` module was removed in modern Gym/Gymnasium.
+- Rendering is implemented with a small self-contained pyglet viewer directly in `slimevolleygym/slimevolley.py`, since the old `gym.envs.classic_control.rendering` module was removed in modern Gym/Gymnasium.
 
-- The pre-trained CMA-ES and GA agents in `zoo/` are stored as plain JSON weight dumps and still load fine. The legacy `stable-baselines` (TF) PPO `.zip` models were not portable to `stable-baselines3` (PyTorch) and have been removed — retrain them with the updated SB3 scripts if you need PPO agents.
+- The pre-trained GA agent in `zoo/` is stored as a plain JSON weight dump and still loads fine. The legacy `stable-baselines` (TF) PPO `.zip` models were not portable to `stable-baselines3` (PyTorch) and have been removed — retrain them with the updated SB3 scripts if you need PPO agents.
 
-- Gymnasium and stable-baselines3 release independently and SB3 lags behind Gymnasium's newest version. On import, `slimevolleygym` runs a best-effort check (`slimevolleygym/_compat.py`) that warns immediately if the installed Gymnasium is outside SB3's declared supported range. To verify an environment is SB3-compatible, you can also run SB3's own checker: `from stable_baselines3.common.env_checker import check_env; check_env(your_env)`.
+- Gymnasium and stable-baselines3 release independently and SB3 lags behind Gymnasium's newest version. On import, `slimevolleygym` runs a best-effort check that warns immediately if the installed Gymnasium is outside SB3's declared supported range. To verify an environment is SB3-compatible, you can also run SB3's own checker: `from stable_baselines3.common.env_checker import check_env; check_env(your_env)`.
 
 ### Notable features
 
@@ -184,18 +184,18 @@ One can consider replacing `policy2` with earlier versions of your agent (self-p
 
 ## Evaluating against other agents
 
-Several pre-trained agents (`ppo`, `cma`, `ga`, `baseline`) are discussed in the [TRAINING.md](TRAINING.md) tutorial.
+Several pre-trained agents (`ppo`, `ga`, `baseline`) are discussed in the [TRAINING.md](TRAINING.md) tutorial.
 
 You can run them against each other using the following command:
 
 ```
-python eval_agents.py --left ppo --right cma --render
+python eval_agents.py --left ppo --right ga --render
 ```
 
 <p align="left">
   <!--<img width="50%" src="https://media.giphy.com/media/VGPfocuIS7YYh6kyMv/giphy.gif"></img>-->
   <img width="50%" src="https://media.giphy.com/media/WsMaF3xeATeiCv7dBq/giphy.gif"></img>
-  <br/><i>Evaluating PPO agent (left) against CMA-ES (right).</i>
+  <br/><i>Evaluating PPO agent (left) against GA (right).</i>
 </p>
 
 It should be relatively straightforward to modify `eval_agents.py` to include your custom agent.
@@ -210,9 +210,7 @@ Below are scores achieved by various algorithms and links to their implementatio
 |---|---|---|---|
 |Maximum Possible Score|5.0|  | 
 |PPO | 1.377 ± 1.133 | 1000 | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
-|CMA-ES | 1.148 ± 1.071 | 1000 | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
 |GA (Self-Play) | 0.353 ± 0.728 | 1000 | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
-|CMA-ES (Self-Play) | -0.071 ± 0.827 | 1000 | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
 |PPO (Self-Play) | -0.371 ± 1.085 | 1000 | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
 |Random Policy | -4.866 ± 0.372 | 1000 | 
 |[Add Method](https://github.com/hardmaru/slimevolleygym/edit/master/README.md) |  |  |  
@@ -224,23 +222,20 @@ For sample efficiency, we can measure how many timesteps it took to train an age
 |Method| Timesteps (Best) | Timesteps (Median)| Trials | Other Info
 |---|---|---|---|---|
 |PPO | 1.274M | 2.998M | 17 | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
-|Data-efficient Rainbow | 0.750M | 0.751M | 3 | [link](https://github.com/pfnet/pfrl/blob/master/examples/slimevolley/README.md)
 |[Add Method](https://github.com/hardmaru/slimevolleygym/edit/master/README.md) |  |  |  | 
 
 ### SlimeVolley-v0 (Against Other Agents)
 
 Table of average scores achieved versus agents other than the default baseline policy ([1000 episodes](https://github.com/hardmaru/slimevolleygym/blob/master/eval_agents.py)):
 
-|Method|Baseline|PPO|CMA-ES|GA (Self-Play)| Other Info
-|---|---|---|---|---|---|
-|PPO |  1.377 ± 1.133 | — |  0.133 ± 0.414 | -3.128 ± 1.509 | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
-|CMA-ES | 1.148 ± 1.071 | -0.133 ± 0.414 | — | -0.301 ± 0.618 | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
-|GA (Self-Play) | 0.353 ± 0.728  | 3.128 ± 1.509 | 0.301 ± 0.618 | — | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
-|CMA-ES (Self-Play) | -0.071 ± 0.827  |  -0.749 ± 0.846 |  -0.351 ± 0.651 |  -4.923 ± 0.342 | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
-|PPO (Self-Play) | -0.371 ± 1.085  | 0.119 ± 1.46 |  -2.304 ± 1.392 |  -0.42 ± 0.717 | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
+|Method|Baseline|PPO|GA (Self-Play)| Other Info
+|---|---|---|---|---|
+|PPO |  1.377 ± 1.133 | — | -3.128 ± 1.509 | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
+|GA (Self-Play) | 0.353 ± 0.728  | 3.128 ± 1.509 | — | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
+|PPO (Self-Play) | -0.371 ± 1.085  | 0.119 ± 1.46 | -0.42 ± 0.717 | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
 |[Add Method](https://github.com/hardmaru/slimevolleygym/edit/master/README.md) |  |  |
 
-It is interesting to note that while GA (Self-Play) did not perform as well against the baseline policy compared to PPO and CMA-ES, it is a superior policy if evaluated against these methods that trained directly against the baseline policy.
+It is interesting to note that while GA (Self-Play) did not perform as well against the baseline policy compared to PPO, it is a superior policy if evaluated against the PPO method that trained directly against the baseline policy.
 
 ### SlimeVolleyPixel-v0
 
@@ -250,11 +245,6 @@ Results for pixel observation version of the environment (`SlimeVolleyPixel-v0` 
 |---|---|---|---|
 |Maximum Possible Score|5.0| | |
 |PPO | 0.435 ± 0.961 | 1000 | [link](https://github.com/hardmaru/slimevolleygym/blob/master/TRAINING.md)
-|Rainbow | 0.037 ± 0.994 | 1000 | [link](https://github.com/hardmaru/RainbowSlimeVolley)
-|A2C | -0.079 ± 1.091 | 1000 | [link](https://github.com/hardmaru/rlzoo)
-|ACKTR | -1.183 ± 1.480 | 1000 | [link](https://github.com/hardmaru/rlzoo)
-|ACER | -1.789 ± 1.632 | 1000 | [link](https://github.com/hardmaru/rlzoo)
-|DQN | -4.091 ± 1.242 | 1000 | [link](https://github.com/hardmaru/rlzoo)
 |Random Policy | -4.866 ± 0.372 | 1000 | 
 |[Add Method](https://github.com/hardmaru/slimevolleygym/edit/master/README.md) |  | (>= 1000) | 
 

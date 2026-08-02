@@ -12,7 +12,6 @@ BaselinePolicy: Default built-in opponent policy (trained in earlier 2015 projec
 
 baseline: Baseline Policy (built-in AI). Simple 120-param RNN.
 ppo: PPO trained vs baseline AI (train_ppo_vec.py). Requires a trained stable-baselines3 model.
-cma: CMA-ES with small network trained vs baseline AI using estool
 ga: Genetic algorithm with tiny network trained using simple tournament selection and self play (train_ga_selfplay.py)
 random: random action agent
 """
@@ -22,7 +21,7 @@ import gymnasium as gym
 import numpy as np
 import argparse
 import slimevolleygym
-from slimevolleygym.mlp import makeSlimePolicy, makeSlimePolicyLite  # simple pretrained models
+from slimevolleygym.mlp import makeSlimePolicyLite  # simple pretrained models
 from slimevolleygym import BaselinePolicy
 from time import sleep
 
@@ -90,7 +89,7 @@ def evaluate_multiagent(env, policy0, policy1, render_mode=False, n_trials=1000,
 
 if __name__ == "__main__":
 
-  APPROVED_MODELS = ["baseline", "ppo", "ga", "cma", "random"]
+  APPROVED_MODELS = ["baseline", "ppo", "ga", "random"]
 
   def checkchoice(choice):
     return choice.lower() in APPROVED_MODELS
@@ -98,7 +97,6 @@ if __name__ == "__main__":
   PATH = {
     "baseline": None,
     "ppo": "zoo/ppo/best_model.zip",
-    "cma": "zoo/cmaes/slimevolley.cma.64.96.best.json",
     "ga": "zoo/ga_sp/ga.json",
     "random": None,
   }
@@ -106,15 +104,14 @@ if __name__ == "__main__":
   MODEL = {
     "baseline": makeBaselinePolicy,
     "ppo": PPOPolicy,
-    "cma": makeSlimePolicy,
     "ga": makeSlimePolicyLite,
     "random": RandomPolicy,
   }
 
   parser = argparse.ArgumentParser(description='Evaluate pre-trained agents against each other.')
-  parser.add_argument('--left', help='choice of (baseline, ppo, cma, ga, random)', type=str, default="baseline")
+  parser.add_argument('--left', help='choice of (baseline, ppo, ga, random)', type=str, default="baseline")
   parser.add_argument('--leftpath', help='path to left model (leave blank for default)', type=str, default="")
-  parser.add_argument('--right', help='choice of (baseline, ppo, cma, ga, random)', type=str, default="ga")
+  parser.add_argument('--right', help='choice of (baseline, ppo, ga, random)', type=str, default="ga")
   parser.add_argument('--rightpath', help='path to right model (leave blank for default)', type=str, default="")
   parser.add_argument('--render', action='store_true', help='render to screen?', default=False)
   parser.add_argument('--day', action='store_true', help='daytime colors?', default=False)
